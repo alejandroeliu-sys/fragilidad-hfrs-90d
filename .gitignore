@@ -1,0 +1,19 @@
+# Datos: excluidos por el repositorio
+*.csv
+*.parquet
+*.duckdb
+*.duckdb.wal
+data/
+
+# Credenciales
+*.pem
+.env
+*.key
+
+# Python y entornos
+__pycache__/
+*.pyc
+.venv/
+venv*/
+.ipynb_checkpoints/
+.pytest_cache/
