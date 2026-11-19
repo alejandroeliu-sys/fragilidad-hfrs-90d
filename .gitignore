@@ -19,3 +19,10 @@ venv*/
 .pytest_cache/
 
 !referencias/*.csv
+
+# Microdatos de MIMIC-IV Demo.
+datos/
+mimic-iv-demo/
+mimic-iv-ed-demo/
+*mimic-iv*.zip
+2018_I9gem.txt
