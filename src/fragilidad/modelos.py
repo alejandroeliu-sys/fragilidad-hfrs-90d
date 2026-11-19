@@ -121,15 +121,17 @@ def predicciones_oof(X, y, columnas, folds):
     return pred
 
 
-def ic_bootstrap(y, predichos, n_boot=N_BOOT, semilla=SEMILLA):
-    """AUROC, AUPRC y ΔAUROC frente a M0, con IC 95 % percentil (mismas réplicas)."""
+def ic_bootstrap(y, predichos, n_boot=N_BOOT, semilla=SEMILLA, referencia="M0"):
+    """AUROC, AUPRC y ΔAUROC frente a `referencia`, con IC 95 % percentil (mismas réplicas)."""
     rng = np.random.default_rng(semilla)
     y = np.asarray(y)
     n = len(y)
     nombres = list(predichos)
+    if referencia not in predichos:
+        raise KeyError(f"La referencia {referencia!r} no está en los modelos predichos")
     arrays = {k: np.asarray(predichos[k]) for k in nombres}
     boots = {k: {"auroc": [], "auprc": []} for k in nombres}
-    deltas = {k: [] for k in nombres if k != "M0"}
+    deltas = {k: [] for k in nombres if k != referencia}
     for _ in range(n_boot):
         idx = rng.integers(0, n, n)
         ys = y[idx]
@@ -142,7 +144,7 @@ def ic_bootstrap(y, predichos, n_boot=N_BOOT, semilla=SEMILLA):
             boots[k]["auroc"].append(aucs[k])
             boots[k]["auprc"].append(auprc(ys, ps))
         for k in deltas:
-            deltas[k].append(aucs[k] - aucs["M0"])
+            deltas[k].append(aucs[k] - aucs[referencia])
 
     def punto_ic(valores, observado):
         xs = np.asarray(valores)
@@ -157,9 +159,12 @@ def ic_bootstrap(y, predichos, n_boot=N_BOOT, semilla=SEMILLA):
         out[k] = {
             "auroc": punto_ic(boots[k]["auroc"], auroc(y, arrays[k])),
             "auprc": punto_ic(boots[k]["auprc"], auprc(y, arrays[k])),
-            "delta": None if k == "M0" else punto_ic(deltas[k], auroc(y, arrays[k]) - auroc(y, arrays["M0"])),
+            "delta": None if k == referencia else punto_ic(
+                deltas[k], auroc(y, arrays[k]) - auroc(y, arrays[referencia])
+            ),
         }
     return out
+
 
 
 def calibracion(y, p, n_grupos=10):
@@ -180,7 +185,9 @@ def calibracion(y, p, n_grupos=10):
 
 
 def texto_ic(res, dec=3):
-    return f"{res['punto']:.{dec}f} [{res['inf']:.{dec}f}-{res['sup']:.{dec}f}]"
+    """Usa coma en el intervalo si algún extremo es negativo, para no escribir '--'."""
+    sep = ", " if res["inf"] < 0 or res["sup"] < 0 else "-"
+    return f"{res['punto']:.{dec}f} [{res['inf']:.{dec}f}{sep}{res['sup']:.{dec}f}]"
 
 
 def graficar_roc(y, predichos, ruta):
