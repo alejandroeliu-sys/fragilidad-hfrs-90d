@@ -1,0 +1,49 @@
+# Reproducible del proyecto con Podman (Fedora) o Docker.
+#
+#   podman-compose build
+#   podman-compose run --rm pruebas     # pytest, sin datos
+#   podman-compose run --rm pipeline    # análisis completo con los datos montados
+
+services:
+  pruebas:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: localhost/fragilidad-hfrs-90d:1.0
+    environment:
+      PYTHONPATH: src
+    command: ["pytest", "-q"]
+
+  pipeline:
+    image: localhost/fragilidad-hfrs-90d:1.0
+    working_dir: /app
+    environment:
+      PYTHONPATH: src
+      MPLBACKEND: Agg
+    volumes:
+      # Repositorio completo: 
+      - .:/app:Z
+      # Base de Synthea a OMOP (solo lectura).
+      - ${OMOP_DB:-${HOME}/s12-omop-cdm-introduccion/omop_20k.duckdb}:/datos/omop_20k.duckdb:ro,z
+      # MIMIC-IV Clinical Demo v2.2 y MIMIC-IV-ED Demo v2.2 (solo lectura).
+      - ${MIMIC_DIR:-${HOME}/datos/mimic-iv-demo}:/datos/mimic-iv-demo:ro,z
+      - ${MIMIC_ED_DIR:-${HOME}/datos/mimic-iv-ed-demo}:/datos/mimic-iv-ed-demo:ro,z
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p data
+        python src/fragilidad/atricion.py /datos/omop_20k.duckdb
+        if [ -f src/fragilidad/diagrama_flujo.py ]; then python src/fragilidad/diagrama_flujo.py /datos/omop_20k.duckdb; fi
+        python src/fragilidad/hfrs.py /datos/omop_20k.duckdb
+        python src/fragilidad/desenlaces.py /datos/omop_20k.duckdb
+        python src/fragilidad/tabla1.py /datos/omop_20k.duckdb
+        python src/fragilidad/supervivencia.py /datos/omop_20k.duckdb
+        python src/fragilidad/features.py /datos/omop_20k.duckdb
+        python src/fragilidad/riesgos_competitivos.py
+        python src/fragilidad/univariado.py
+        python src/fragilidad/modelos.py
+        python src/fragilidad/xgb_shap.py
+        python src/fragilidad/validacion_mimic.py --mimic /datos/mimic-iv-demo --ed /datos/mimic-iv-ed-demo
+        echo "Pipeline terminado: revisa docs/ y figuras/"

@@ -1,12 +1,18 @@
 # Limitaciones
 
-Estas limitaciones se observaron al calcular el HFRS, los desenlaces a 90 días, la Tabla 1 y el análisis de supervivencia sobre la base sintética Synthea convertida a OMOP (`omop_20k.duckdb`). 
+Estas limitaciones describen lo que permiten medir las bases usadas: Synthea convertida a OMOP (`omop_20k.duckdb`) para el desarrollo y MIMIC-IV Demo para la validación externa. 
 
-## Datos sintéticos
+## 1. Datos sintéticos (Synthea)
 
-Los datos son 100 % sintéticos. La validación externa en MIMIC-IV Demo (datos reales) esta pendiente para la entrega final.
+Los datos de desarrollo son 100 % sintéticos. 
 
-## Atrición de la cohorte 
+- **Periodos de observación:** los 11,745 egresos iniciales ya tenían 730 días de observación previa.
+- **Muertes el día del egreso o antes:** se excluyeron 370 personas. 
+- **Hallazgos clínicamente implausibles en la Tabla 1:** la enfermedad renal crónica y la creatinina son menores en quienes mueren, y las medianas de la TFGe (11 frente a 21) no son plausibles desde el punto de vista biológico.
+- **Función renal colineal:** `creatinina_ultima` y `tfge_ultima` entran juntas en M3. Sus HR ajustados no se interpretan por separado; lo que se observo es que la predicción no se afecta.
+- **Variables no disponibles:** IL-1, cistatina C y METs no están en la base, así que no entraron a la matriz de 37 variables, como se habia planteado en el proyecto original.
+
+## 2. Atrición y sesgo de selección
 
 | Paso | n | Perdidos |
 |---|---:|---:|
@@ -21,19 +27,9 @@ Los datos son 100 % sintéticos. La validación externa en MIMIC-IV Demo (datos 
 | − cáncer maligno en 365 días | 5,885 | 449 |
 | − muerte el día del egreso o antes | 5,515 | 370 |
 
-Los 11,745 egresos iniciales ya tenían 730 días de observación previa: al parecer es un artefacto de cómo Synthea construye los periodos. El criterio que más reduce la muestra es exigir dos visitas ambulatorias, seguido de creatinina y albúmina. Exigir esas analíticas como criterio de inclusión puede introducir sesgo; se mantiene para se comentara para la evaluación final.
+Selecciinar  dos visitas ambulatorias y analíticas previas como criterio de inclusión selecciona personas con más contacto con el sistema de salud. Los resultados no se pueden generalizar a quien llega al hospital sin seguimiento previo.
 
-Se excluyeron 370 personas con muerte el día del egreso o antes. En una cohorte de egresos esa muerte no debería existir: es un posible artefacto de Synthea.
-
-## Traducción del HFRS a esta base
-
-El HFRS se publicó con códigos CIE-10 de la OMS. Esta base no tiene ese vocabulario; los diagnósticos se traducen de SNOMED a ICD10CM con la relación `Mapped from` y se usan los primeros tres caracteres del código.
-
-- **F00 no existe en ICD10CM.** En la CIE-10 de la OMS, la demencia en la enfermedad de Alzheimer (F00, 7.1 puntos) suele acompañar a G30. Aquí se asignan esos 7.1 puntos a quien tiene G30. El puntaje sin ese ajuste queda en `hfrs_sin_f00`.
-- **Puente manual de 9 conceptos.** Algunos conceptos SNOMED frecuentes en Synthea no tienen traducción automática a un código del HFRS. Se mapean a mano en `referencias/puente_snomed_hfrs.csv`.
-- **Z60 y Z73.** En esta base salen de «Social isolation» y «Stress». Como son muy frecuentes y pueden inflar el puntaje, se guarda `hfrs_sin_social` como análisis de sensibilidad.
-
-## Distribución comprimida del HFRS
+## 3. HFRS comprimido
 
 | Categoría | Personas | % |
 |---|---:|---:|
@@ -41,46 +37,45 @@ El HFRS se publicó con códigos CIE-10 de la OMS. Esta base no tiene ese vocabu
 | Intermedio (5 a 15) | 297 | 5.4 % |
 | Alto (>15) | 10 | 0.2 % |
 
-La mediana es 0.6 puntos (el solo código de «Stress») y el máximo 19.1. Synthea casi no genera los diagnósticos de condiciones relacionadas a personas mayores que más pesan en el HFRS (caídas, delirium, úlceras por presión, incontinencia).
+- La mediana es 0.6 puntos y el máximo es 19.1. Se observó que Synthea casi no genera los diagnósticos de síndromes geriátricos que más pesan en el HFRS (caídas, delirium, úlceras por presión, incontinencia).
+- El grupo alto tiene solo 10 personas: su curva de Kaplan-Meier y su comparación son muy inestables. Por eso se agregaron el HFRS continuo (por punto) y los terciles de la muestra.
+- Con poca variabilidad, el AUROC de M0 (0.600) subestima lo que el HFRS podría discriminar en una población real.
 
-Consecuencias:
+## 4. Traducción del HFRS
 
-- El grupo alto tiene 10 personas y 2 muertes. Su curva de Kaplan-Meier y sus comparaciones log-rank son inestables (5-15 vs >15: p = 0.758 por falta de poder, no por ausencia de diferencia). Se mantienen las categorías de la propuesta y se agregan el HFRS continuo y los terciles de la muestra.
-- Por los empates en 0.6, el primer tercil quedó con 2,811 personas, el segundo con 1,775 y el tercero con 929 (cortes 0.0, 0.6, 2.4 y 19.1). Los terciles no son del mismo tamaño.
-- Esta limitación motiva la validación en MIMIC-IV Demo.
+- El HFRS se publicó en CIE-10 de la OMS. Aquí se usa SNOMED → ICD10CM (`Mapped from`) con 3 caracteres.
+- **F00** no existe en ICD10CM: sus 7.1 puntos se asignan a G30. El puntaje sin ajuste está en `hfrs_sin_f00`.
+- **Puente manual** de 9 conceptos SNOMED (`referencias/puente_snomed_hfrs.csv`). 
 
-## Hallazgos poco plausibles en la Tabla 1
 
-La Tabla 1 compara a las 5,372 personas con seguimiento completo (5,003 sobreviven, 369 mueren). Algunas diferencias van en sentido contrario a lo clínicamente esperado y se atribuyen a cómo Synthea genera los datos:
+## 5. Desenlaces y seguimiento
 
-- **Enfermedad renal crónica y creatinina más bajas en quienes mueren** (ERC 29.5 % vs 41.2 %; creatinina mediana 1.4 vs 2.7).
-- **TFGe con medianas implausibles** (11.2 en sobrevivientes y 21.3 en fallecidos).  No se verificaron unidades en `unit_concept_id`; queda pendiente.
-- **Sesgo de registro en hemoglobina.** Falta en 470 sobrevivientes y solo en 4 fallecidos (tener hemoglobina: 90.6 % vs 98.9 %). Quien está más enfermo tiene más análisis. 
-- Creatinina, albúmina y TFGe están disponibles en el 100 % porque son criterios de inclusión.
+- 143 personas (2.6 %) tienen seguimiento incompleto. Quedan fuera del análisis  (5,372 de 5,515) y se censuran en el Cox (5,494).
+- Los reingresos y las urgencias solo se ven si quedan registrados en la base. 
+- Para reingreso y urgencias, la muerte es un riesgo competitivo. El patrón inverso del reingreso por terciles (T1 20.7 % frente a T3 11.4 %) se explica en parte porque en T3 muere el 13.3 % antes de poder reingresar.
 
-Por eso estas variables se interpretarán con cautela en los modelos multivariables.
+## 6. Modelos
 
-## Supervivencia preliminar
+- **Riesgos proporcionales:** en el Cox multivariable de M3 la prueba de Schoenfeld rechaza el supuesto en 17 de 37 variables. Los HR ajustados deben leerse como un promedio en el tiempo de 90 días; no son constantes.
+- **C-index de Cox M3 (0.695) aparente:** se calcula en la misma muestra, no por validación cruzada.
+- **Faltantes informativos:** la falta de un laboratorio depende del estado clínico (por ejemplo, falta la hemoglobina en 470 sobrevivientes y en 4 muertes). Los indicadores `_falta` capturan parte de esa información, pero la imputación por mediana supone algo que no se cumple. `albumina_falta`, `creatinina_falta` y `tfge_falta` se excluyeron justamente como datos faltantes.
+- **XGBoost:** hiperparámetros fijos. Su ventaja frente a M3 (ΔAUROC +0.076) es interna a Synthea y no se ha validado en datos reales.
+- **SHAP no es causal:** describe cómo usa el modelo cada variable. 
 
-- **Riesgos proporcionales.** La prueba de Schoenfeld (transformación rank) rechaza la proporcionalidad para el HFRS continuo (p < 0.001) y para los terciles. El efecto del HFRS cambia en los 90 días. Los HR son un promedio en el tiempo; en la entrega final se probará estratificar o agregar interacción con el tiempo.
-- **Relación no lineal.** El tercil 2 tuvo HR 0.74 (IC 95 % 0.56-0.97) frente al tercil 1, y el tercil 3 HR 2.54 (2.02-3.20). 
-- **Discriminación modesta.** C-index 0.578 con el HFRS solo y 0.617 con edad y sexo. Es la referencia (M0) que los modelos M1 a M3 deberán superar.
-- La mediana de supervivencia no se alcanza a los 90 días (la curva queda arriba de 0.5).
+## 7. Validación externa en MIMIC-IV Demo (exploratoria)
 
-## Variables que quizá no estén
+- **Muestra mínima:** 45 personas en la cohorte postegreso; 27 con seguimiento completo y 14 eventos. El IC del AUROC (0.703 [0.488-0.894]) cruza 0.5: con dirección esperada, pero no se puede afirmar que M0 discrimine adecuadamente en MIMIC.
+- **Calibración inestable:** la pendiente (0.83), la CITL (−0.091) y la razón O/E (0.85) se calcularon con muy pocos grupos; M0 sobreestima el riesgo en cerca de un 15 % . 
+- **Un solo hospital:** Beth Israel Deaconess Medical Center (Boston), un centro terciario académico.
+- **Seguimiento parcial:** solo se ven reingresos y urgencias en ese mismo hospital; los que ocurren en otros hospitales cuentan como «sin evento». La muerte fuera del hospital solo se registra hasta un año después del último egreso. 
+- **Extrapolación:** el HFRS en MIMIC (mediana 7.6, máximo 25.3) está muy por encima del rango en el que se ajustó M0 en Synthea (mediana 0.6, máximo 19.1). 
+- **Error de medición por el GEM:** 36 de las 45 personas tienen el ingreso índice codificado en ICD-9. La traducción con el GEM CMS 2018 es aproximada y de 1 a muchos (puede sobreasignar puntos). Además, 8 códigos del HFRS no tienen origen ICD-9 en el GEM (F00, J22, R02, R54, U80, X59, Y95, Z50), así que el HFRS puede quedar subestimado en esas personas; F00 se recupera en parte por G30.
+- **Solo M0:** M3 y XGBoost no se transportaron porque varias variables son propias de Synthea y no hay potencia para 37 predictores.
 
-IL-1, cistatina C y METs probablemente no estén en esta base. Falta verificarlo. Si no aparecen, no entrarán al modelo multivariable y se declarará en la entrega final.
 
-## Desenlaces a 90 días
+## 8. Trabajo futuro
 
-En las 5,515 personas:
-
-- 369 muertes (6.7 %)
-- 910 reingresos, visita 9201 (16.5 %)
-- 1,082 visitas a urgencias, visita 9203 (19.6 %)
-- 2,051 con el desenlace compuesto (37.2 %)
-- 143 con seguimiento incompleto (2.6 %): se censuran en supervivencia y se excluyen de la Tabla 1
-
-## Qué no cubre este avance
-
-Este documento describe el avance intermedio . Faltan para la entrega final los modelos anidados M1 a M3, XGBoost con SHAP, curvas ROC y de calibración, AUPRC, la incidencia acumulada con la prueba de Gray para reingreso y urgencias, y la validación en MIMIC-IV Demo.
+- **MIMIC-IV completo (v2.2 o posterior):** el mismo código funciona cambiando `--mimic` y `--ed`. Daría miles de personas de 65 años o más, y permitiría transportar M1 y mapear laboratorios para acercarse a M3.
+- **All of Us (NIH):** está en OMOP, igual que la base de desarrollo, así que el SQL de cohorte y HFRS se podría reutilizar casi sin cambios. Sin embargo, el acceso depende de un convenio institucional.
+- **CPRD + HES o UK Biobank:** la fuente original del HFRS (CIE-10 de la OMS, sin necesidad del ajuste F00).
+- **Métodos:** Aquí se sugeriría seguir el siguiente pipelin de recalibración en el sitio externo, modelos con coeficientes que cambian con el tiempo para los riesgos proporcionales, Fine-Gray para reingreso y urgencias, y búsqueda de hiperparámetros con validación anidada.

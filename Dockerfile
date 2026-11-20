@@ -1,5 +1,6 @@
-# Imagen reproducible del avance. Corre las pruebas
-FROM python:3.14-slim
+# Imagen reproducible del avance. 
+# Nombre completo de la imagen: Se utilizó Podman en Fedora.
+FROM docker.io/library/python:3.14-slim
 
 WORKDIR /app
 
